@@ -1,5 +1,8 @@
 #include "<BASENAME>.h"
 #include <stdio.h>
+#include <dbghelp.h>
+
+#pragma comment(lib, "dbghelp.lib")
 
 //#define DEBUG
 
