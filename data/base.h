@@ -7,6 +7,10 @@
 #define SW3_HEADER_H_
 
 #include <windows.h>
+#include <stdio.h>
+#include <dbghelp.h>
+
+#pragma comment(lib, "dbghelp.lib")
 
 #define SW3_SEED <SEED_VALUE>
 #define SW3_ROL8(v) (v << 8 | v >> 24)

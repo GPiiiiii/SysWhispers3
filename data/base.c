@@ -1,8 +1,4 @@
 #include "<BASENAME>.h"
-#include <stdio.h>
-#include <dbghelp.h>
-
-#pragma comment(lib, "dbghelp.lib")
 
 //#define DEBUG
 
@@ -52,7 +48,6 @@ PVOID SC_Address(PVOID NtApiAddress)
 PVOID SC_Address(PVOID NtApiAddress)
 {
     DWORD searchLimit = 512;
-    PVOID SyscallAddress;
 
    #ifdef _WIN64
     // If the process is 64-bit on a 64-bit OS, we need to search for syscall
@@ -77,7 +72,7 @@ PVOID SC_Address(PVOID NtApiAddress)
 
     // we don't really care if there is a 'jmp' between
     // NtApiAddress and the 'syscall; ret' instructions
-    SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, distance_to_syscall);
+    PVOID SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, distance_to_syscall);
 
     if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code)))
     {
@@ -145,8 +140,8 @@ BOOL SW3_PopulateSyscallList()
 
     // Get the DllBase address of NTDLL.dll. NTDLL is not guaranteed to be the second
     // in the list, so it's safer to loop through the full list and find it.
-    PSW3_LDR_DATA_TABLE_ENTRY LdrEntry;
-    for (LdrEntry = (PSW3_LDR_DATA_TABLE_ENTRY)Ldr->Reserved2[1]; LdrEntry->DllBase != NULL; LdrEntry = (PSW3_LDR_DATA_TABLE_ENTRY)LdrEntry->Reserved1[0])
+    //PSW3_LDR_DATA_TABLE_ENTRY LdrEntry;
+    for (PSW3_LDR_DATA_TABLE_ENTRY LdrEntry = (PSW3_LDR_DATA_TABLE_ENTRY)Ldr->Reserved2[1]; LdrEntry->DllBase != NULL; LdrEntry = (PSW3_LDR_DATA_TABLE_ENTRY)LdrEntry->Reserved1[0])
     {
         DllBase = LdrEntry->DllBase;
         // PIMAGE_DOS_HEADER DosHeader = (PIMAGE_DOS_HEADER)DllBase;
