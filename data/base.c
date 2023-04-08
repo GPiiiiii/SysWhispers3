@@ -52,7 +52,10 @@ PVOID SC_Address(PVOID NtApiAddress)
    #ifdef _WIN64
     // If the process is 64-bit on a 64-bit OS, we need to search for syscall
     BYTE syscall_code[] = { 0x0f, 0x05, 0xc3 };
-    ULONG distance_to_syscall = 0x12;
+
+    // distance_to_syscall maybe 0x12 or 0x08
+    ULONG distance_to_syscall_1 = 0x08;
+    ULONG distance_to_syscall_2 = 0x12;
    #else
     // If the process is 32-bit on a 32-bit OS, we need to search for sysenter
     BYTE syscall_code[] = { 0x0f, 0x34, 0xc3 };
@@ -72,15 +75,23 @@ PVOID SC_Address(PVOID NtApiAddress)
 
     // we don't really care if there is a 'jmp' between
     // NtApiAddress and the 'syscall; ret' instructions
-    PVOID SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, distance_to_syscall);
+    PVOID SyscallAddress_1 = SW3_RVA2VA(PVOID, NtApiAddress, distance_to_syscall_1);
+    PVOID SyscallAddress_2 = SW3_RVA2VA(PVOID, NtApiAddress, distance_to_syscall_2);
 
-    if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code)))
+    if (!memcmp((PVOID)syscall_code, SyscallAddress_1, sizeof(syscall_code)))
     {
         // we can use the original code for this system call :)
         #if defined(DEBUG)
-            printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress);
+            printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_1);
         #endif
-        return SyscallAddress;
+        return SyscallAddress_1;
+    }
+    else if (!memcmp((PVOID)syscall_code, SyscallAddress_2, sizeof(syscall_code)))
+    {
+        #if defined(DEBUG)
+            printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_2);
+        #endif
+        return SyscallAddress_2;
     }
 
     // the 'syscall; ret' intructions have not been found,
@@ -89,29 +100,51 @@ PVOID SC_Address(PVOID NtApiAddress)
     for (ULONG32 num_jumps = 1; num_jumps < searchLimit; num_jumps++)
     {
         // let's try with an Nt* API below our syscall
-        SyscallAddress = SW3_RVA2VA(
+        SyscallAddress_1 = SW3_RVA2VA(
             PVOID,
             NtApiAddress,
-            distance_to_syscall + num_jumps * 0x20);
-        if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code)))
+            distance_to_syscall_1 + num_jumps * 0x20);
+        SyscallAddress_2 = SW3_RVA2VA(
+            PVOID,
+            NtApiAddress,
+            distance_to_syscall_2 + num_jumps * 0x10);
+        if (!memcmp((PVOID)syscall_code, SyscallAddress_1, sizeof(syscall_code)))
         {
-        #if defined(DEBUG)
-            printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress);
-        #endif
-            return SyscallAddress;
+            #if defined(DEBUG)
+                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_1);
+            #endif
+            return SyscallAddress_1;
+        }
+        else if (!memcmp((PVOID)syscall_code, SyscallAddress_2, sizeof(syscall_code)))
+        {
+            #if defined(DEBUG)
+                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_2);
+            #endif
+            return SyscallAddress_2;
         }
 
         // let's try with an Nt* API above our syscall
-        SyscallAddress = SW3_RVA2VA(
+        SyscallAddress_1 = SW3_RVA2VA(
             PVOID,
             NtApiAddress,
-            distance_to_syscall - num_jumps * 0x20);
-        if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code)))
+            distance_to_syscall_1 - num_jumps * 0x20);
+        SyscallAddress_2 = SW3_RVA2VA(
+            PVOID,
+            NtApiAddress,
+            distance_to_syscall_2 - num_jumps * 0x10);
+        if (!memcmp((PVOID)syscall_code, SyscallAddress_1, sizeof(syscall_code)))
         {
-        #if defined(DEBUG)
-            printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress);
-        #endif
-            return SyscallAddress;
+            #if defined(DEBUG)
+                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_1);
+            #endif
+            return SyscallAddress_1;
+        }
+        else if (!memcmp((PVOID)syscall_code, SyscallAddress_2, sizeof(syscall_code)))
+        {
+            #if defined(DEBUG)
+                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_2);
+            #endif
+            return SyscallAddress_2;
         }
     }
 
