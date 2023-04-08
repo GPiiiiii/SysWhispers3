@@ -645,6 +645,7 @@ if __name__ == '__main__':
         print('Common functions selected.\n')
         sw.generate(
             ['NtCreateProcess',
+             'NtCreateThread',
              'NtCreateThreadEx',
              'NtOpenProcess',
              'NtOpenProcessToken',
@@ -675,7 +676,9 @@ if __name__ == '__main__':
              'NtDeviceIoControlFile',
              'NtQueueApcThread',
              'NtWaitForMultipleObjects',
-             'NtDelayExecution'],
+             'NtDelayExecution',
+             'NtCreateFile',
+             'NtReadFile'],
             basename=args.out_file)
 
     elif args.preset:
