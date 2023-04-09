@@ -15,9 +15,25 @@
 #define SW3_ROX8(v) ((SW3_SEED % 2) ? SW3_ROL8(v) : SW3_ROR8(v))
 #define SW3_MAX_ENTRIES 500
 #define SW3_RVA2VA(Type, DllBase, Rva) (Type)((ULONG_PTR) DllBase + Rva)
+
+#define SW3_LAG1 ((UINT16)24)
+#define SW3_LAG2 ((UINT16)55)
+#define SW3_RAND_SSIZE ((UINT16)1<<6)
+#define SW3_RAND_SMASK (SW3_RAND_SSIZE-1)
+#define SW3_RAND_EXHAUST_LIMIT SW3_LAG2
+// 10x is a heuristic, it just needs to be large enough to remove correlation
+#define SW3_RAND_REFILL_COUNT ((SW3_LAG2*10)-SW3_RAND_EXHAUST_LIMIT)
+
 #define NtCurrentProcess() ( (HANDLE)(LONG_PTR) -1 )
 
 // Typedefs are prefixed to avoid pollution.
+
+typedef struct _SW3_RNG_RAND
+{
+	DWORD64 s[SW3_RAND_SSIZE]; // Lags
+	UINT32 i; // Location of the current lag
+	UINT32 c; // Exhaustion count
+} SW3_RNG_RAND, *PSW3_RNG_RAND;
 
 typedef struct _SW3_SYSCALL_ENTRY
 {

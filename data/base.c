@@ -49,49 +49,42 @@ PVOID SC_Address(PVOID NtApiAddress)
 {
     DWORD searchLimit = 512;
 
-   #ifdef _WIN64
+    #ifdef _WIN64
     // If the process is 64-bit on a 64-bit OS, we need to search for syscall
     BYTE syscall_code[] = { 0x0f, 0x05, 0xc3 };
 
     // distance_to_syscall maybe 0x12 or 0x08
-    ULONG distance_to_syscall_1 = 0x08;
-    ULONG distance_to_syscall_2 = 0x12;
-   #else
+    ULONG distance_to_syscall = 0x12;
+    #else
     // If the process is 32-bit on a 32-bit OS, we need to search for sysenter
     BYTE syscall_code[] = { 0x0f, 0x34, 0xc3 };
     ULONG distance_to_syscall = 0x0f;
-   #endif
+    #endif
 
-  #ifdef _M_IX86
+    BYTE syscall_end[] = {0xc3};
+
+    #ifdef _M_IX86
     // If the process is 32-bit on a 64-bit OS, we need to jump to WOW32Reserved
     if (local_is_wow64())
     {
     #ifdef DEBUG
         printf("[+] Running 32-bit app on x64 (WOW64)\n");
     #endif
-// JUMP_TO_WOW32Reserved
+    // JUMP_TO_WOW32Reserved
     }
-  #endif
+    #endif
 
     // we don't really care if there is a 'jmp' between
     // NtApiAddress and the 'syscall; ret' instructions
-    PVOID SyscallAddress_1 = SW3_RVA2VA(PVOID, NtApiAddress, distance_to_syscall_1);
-    PVOID SyscallAddress_2 = SW3_RVA2VA(PVOID, NtApiAddress, distance_to_syscall_2);
-
-    if (!memcmp((PVOID)syscall_code, SyscallAddress_1, sizeof(syscall_code)))
-    {
-        // we can use the original code for this system call :)
-        #if defined(DEBUG)
-            printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_1);
-        #endif
-        return SyscallAddress_1;
-    }
-    else if (!memcmp((PVOID)syscall_code, SyscallAddress_2, sizeof(syscall_code)))
-    {
-        #if defined(DEBUG)
-            printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_2);
-        #endif
-        return SyscallAddress_2;
+    BYTE index = 0x0;
+    PVOID SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, index);
+    while (memcmp((PVOID)syscall_end, SyscallAddress, sizeof(syscall_end))) {
+        if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code))) {
+            printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress);
+            return SyscallAddress;
+        }
+        index++;
+        SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, index);
     }
 
     // the 'syscall; ret' intructions have not been found,
@@ -100,51 +93,25 @@ PVOID SC_Address(PVOID NtApiAddress)
     for (ULONG32 num_jumps = 1; num_jumps < searchLimit; num_jumps++)
     {
         // let's try with an Nt* API below our syscall
-        SyscallAddress_1 = SW3_RVA2VA(
-            PVOID,
-            NtApiAddress,
-            distance_to_syscall_1 + num_jumps * 0x20);
-        SyscallAddress_2 = SW3_RVA2VA(
-            PVOID,
-            NtApiAddress,
-            distance_to_syscall_2 + num_jumps * 0x10);
-        if (!memcmp((PVOID)syscall_code, SyscallAddress_1, sizeof(syscall_code)))
-        {
-            #if defined(DEBUG)
-                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_1);
-            #endif
-            return SyscallAddress_1;
-        }
-        else if (!memcmp((PVOID)syscall_code, SyscallAddress_2, sizeof(syscall_code)))
-        {
-            #if defined(DEBUG)
-                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_2);
-            #endif
-            return SyscallAddress_2;
+        SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, num_jumps * index);
+        while (memcmp((PVOID)syscall_end, SyscallAddress, sizeof(syscall_end))) {
+            if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code))) {
+                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress);
+                return SyscallAddress;
+            }
+            index++;
+            SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, index);
         }
 
         // let's try with an Nt* API above our syscall
-        SyscallAddress_1 = SW3_RVA2VA(
-            PVOID,
-            NtApiAddress,
-            distance_to_syscall_1 - num_jumps * 0x20);
-        SyscallAddress_2 = SW3_RVA2VA(
-            PVOID,
-            NtApiAddress,
-            distance_to_syscall_2 - num_jumps * 0x10);
-        if (!memcmp((PVOID)syscall_code, SyscallAddress_1, sizeof(syscall_code)))
-        {
-            #if defined(DEBUG)
-                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_1);
-            #endif
-            return SyscallAddress_1;
-        }
-        else if (!memcmp((PVOID)syscall_code, SyscallAddress_2, sizeof(syscall_code)))
-        {
-            #if defined(DEBUG)
-                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress_2);
-            #endif
-            return SyscallAddress_2;
+        SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, 0x0 - num_jumps * index);
+        while (memcmp((PVOID)syscall_end, SyscallAddress, sizeof(syscall_end))) {
+            if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code))) {
+                printf("Found Syscall Opcodes at address 0x%p\n", SyscallAddress);
+                return SyscallAddress;
+            }
+            index++;
+            SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, index);
         }
     }
 
@@ -282,16 +249,64 @@ EXTERN_C PVOID SW3_GetSyscallAddress(DWORD FunctionHash)
     return NULL;
 }
 
+EXTERN_C DWORD64 SW3_RAND(PSW3_RNG_RAND state)
+{
+    UINT32 i;
+    UINT32 r, new_rands = 0;
+
+    if (!state->c) { // Randomness exhausted, run forward to refill
+        new_rands += SW3_RAND_REFILL_COUNT + 1;
+        state->c = SW3_RAND_EXHAUST_LIMIT - 1;
+    }
+    else {
+        new_rands = 1;
+        state->c--;
+    }
+
+    for (r = 0; r < new_rands; r++) {
+        i = state->i;
+        state->s[i & SW3_RAND_SMASK] =
+            state->s[(i + SW3_RAND_SSIZE - SW3_LAG1) & SW3_RAND_SMASK] +
+            state->s[(i + SW3_RAND_SSIZE - SW3_LAG2) & SW3_RAND_SMASK];
+        state->i++;
+    }
+    return state->s[i & SW3_RAND_SMASK];
+}
+
+EXTERN_C VOID SW3_SRAND(DWORD64 seed, PSW3_RNG_RAND state)
+{
+    UINT32 i;
+    // Naive seed
+    state->c = SW3_RAND_EXHAUST_LIMIT;
+    state->i = 0;
+
+    state->s[0] = seed;
+    for (i = 1; i < SW3_RAND_SSIZE; i++)
+    {
+        // Arbitrary magic, mostly to eliminate the effect of low-value seeds.
+        // Probably could be better, but the run-up obviates any real need to.
+        state->s[i] = i * (UINT64)2147483647 + seed;
+    }
+
+    // Run forward 10,000 numbers
+    for (i = 0; i < 10000; i++)
+    {
+        SW3_RAND(state);
+    }
+}
+
 EXTERN_C PVOID SW3_GetRandomSyscallAddress(DWORD FunctionHash)
 {
     // Ensure SW3_SyscallList is populated.
     if (!SW3_PopulateSyscallList()) return NULL;
 
-    DWORD index = ((DWORD) rand()) % SW3_SyscallList.Count;
+    SW3_RNG_RAND rand;
+    SW3_SRAND(SW3_SEED, &rand);
+    DWORD index = ((DWORD) SW3_RAND(&rand)) % SW3_SyscallList.Count;
 
     while (FunctionHash == SW3_SyscallList.Entries[index].Hash){
         // Spoofing the syscall return address
-        index = ((DWORD) rand()) % SW3_SyscallList.Count;
+        index = ((DWORD) SW3_RAND(&rand)) % SW3_SyscallList.Count;
     }
     return SW3_SyscallList.Entries[index].SyscallAddress;
 }
