@@ -320,7 +320,7 @@ class SysWhispers(object):
     def _get_function_hash(self, function_name: str):
         hash = self.seed
         name = function_name.replace('Nt', 'Zw', 1) + '\0'
-        ror8 = lambda v: ((v >> 8) & (2 ** 32 - 1)) | ((v << 24) & (2 ** 32 - 1))
+        ror8 = lambda v: ((v >> 8) & (2 ** 32 - 1)) | ((v >> 16) & (2 ** 32 - 1)) | ((v << 24) & (2 ** 32 - 1))
 
         for segment in [s for s in [name[i:i + 2] for i in range(len(name))] if len(s) == 2]:
             partial_name_short = struct.unpack('<H', segment.encode())[0]
@@ -346,19 +346,28 @@ class SysWhispers(object):
             code += '\n\t\t"mov [rsp+16], rdx \\n"'
             code += '\n\t\t"mov [rsp+24], r8 \\n"'
             code += '\n\t\t"mov [rsp+32], r9 \\n"'
-            code += '\n\t\t"sub rsp, 0x28 \\n"'
-            code += f'\n\t\t"mov ecx, 0x{function_hash:08X} \\n"'
             if self.recovery in [SyscallRecoveryType.JUMPER, SyscallRecoveryType.JUMPER_RANDOMIZED]:
+                code += f'\n\t\t"mov ecx, 0x{function_hash:08X} \\n"'
+                code += '\n\t\t"push rcx \\n"'
+                code += '\n\t\t"sub rsp, 0x28 \\n"'
                 if self.recovery == SyscallRecoveryType.JUMPER_RANDOMIZED:
                     code += '\n\t\t"call SW3_GetRandomSyscallAddress \\n"'
                 else:
                     code += '\n\t\t"call SW3_GetSyscallAddress \\n"'
-                code += '\n\t\t"mov [rsp+20h], rax \\n"'
+                code += '\n\t\t"add rsp, 0x28 \\n"'
+                code += '\n\t\t"pop rcx \\n"'
+                code += '\n\t\t"push rax \\n"'
+                code += '\n\t\t"sub rsp, 0x28 \\n"'
+            else:
+                code += '\n\t\t"sub rsp, 0x28 \\n"'
                 code += f'\n\t\t"mov ecx, 0x{function_hash:08X} \\n"'
             code += '\n\t\t"call SW3_GetSyscallNumber \\n"'
-            if self.recovery in [SyscallRecoveryType.JUMPER, SyscallRecoveryType.JUMPER_RANDOMIZED]:            
-                code += '\n\t\t"mov r11, [rsp+20h] \\n"'
-            code += '\n\t\t"add rsp, 0x28 \\n"'
+            if self.recovery in [SyscallRecoveryType.JUMPER, SyscallRecoveryType.JUMPER_RANDOMIZED]:
+                # code += '\n\t\t"mov r11, [rsp+20h] \\n"'
+                code += '\n\t\t"add rsp, 0x28 \\n"'
+                code += '\n\t\t"pop r11 \\n"'
+            else:
+                code += '\n\t\t"add rsp, 0x28 \\n"'
             code += '\n\t\t"mov rcx, [rsp+8] \\n"'
             code += '\n\t\t"mov rdx, [rsp+16] \\n"'
             code += '\n\t\t"mov r8, [rsp+24] \\n"'
@@ -381,6 +390,9 @@ class SysWhispers(object):
             code += '\n#else'
 
         if self.arch in [Arch.Any, Arch.x86]:
+            if self.recovery in [SyscallRecoveryType.JUMPER, SyscallRecoveryType.JUMPER_RANDOMIZED]:
+                code += '\n\t\t"push edi \\n"'
+            code += '\n\t\t"push ebx \\n"'
             code += '\n\t\t"push ebp \\n"'
             code += '\n\t\t"mov ebp, esp \\n"'
             code += f'\n\t\t"push 0x{function_hash:08X} \\n"'
@@ -397,7 +409,10 @@ class SysWhispers(object):
             code += f'\n\t\t"mov ecx, {hex(num_params)} \\n"'
             code += f'\n\t"push_argument_{function_hash:08X}: \\n"'
             code += '\n\t\t"dec ecx \\n"'
-            code += '\n\t\t"push [ebp + 8 + ecx * 4] \\n"'
+            if self.recovery in [SyscallRecoveryType.JUMPER, SyscallRecoveryType.JUMPER_RANDOMIZED]:
+                code += '\n\t\t"push [ebp + 16 + ecx * 4] \\n"'
+            else:
+                code += '\n\t\t"push [ebp + 12 + ecx * 4] \\n"'
             code += f'\n\t\t"jnz push_argument_{function_hash:08X} \\n"'
             if self.debug:
                 # 2nd SW breakpoint, to study the syscall instruction in detail
@@ -410,7 +425,7 @@ class SysWhispers(object):
                 # check if the process is WoW64 or native
                 code += '\n\t\t"call _local_is_wow64 \\n"'
                 code += '\n\t\t"test eax, eax \\n"'
-                code += '\n\t\t"je is_native \\n"'
+                code += f'\n\t\t"je is_native_{function_hash:08X} \\n"'
 
                 # if is wow64
                 code += '\n\t\t"call _internal_cleancall_wow64_gate \\n"'
@@ -423,11 +438,14 @@ class SysWhispers(object):
                 # In this case, as we need to return to the program, we can insert the return address twice
                 code += '\n\t\t"push ebx \\n"'
                 code += '\n\t\t"xchg eax, ecx \\n"'
-                code += '\n\t\t"jmp ecx \\n"'
-                code += '\n\t\t"jmp finish \\n"'
+                code += '\n\t\t"lea edx, [esp+8] \\n"'
+                code += '\n\t\t"mov ebx, ecx \\n"'
+                code += '\n\t\t"xor ecx, ecx \\n"'
+                code += '\n\t\t"jmp ebx \\n"'
+                code += f'\n\t\t"jmp finish_{function_hash:08X} \\n"'
 
                 # if is native
-                code += '\n\t"is_native: \\n"'
+                code += f'\n\t"is_native_{function_hash:08X}: \\n"'
 
             code += '\n\t\t"mov eax, ecx \\n"'
             code += f'\n\t\t"lea ebx, [ret_address_epilog_{function_hash:08X}] \\n"'
@@ -437,15 +455,28 @@ class SysWhispers(object):
             if self.recovery not in [SyscallRecoveryType.JUMPER,
                                      SyscallRecoveryType.JUMPER_RANDOMIZED] \
                     and self.wow64:
-                code += '\n\t"finish: \\n"'
+                code += f'\n\t"finish_{function_hash:08X}: \\n"'
             code += '\n\t\t"lea esp, [esp+4] \\n"'
             code += f'\n\t"ret_address_epilog_{function_hash:08X}: \\n"'
             code += '\n\t\t"mov esp, ebp \\n"'
             code += '\n\t\t"pop ebp \\n"'
+            code += '\n\t\t"pop ebx \\n"'
+            if self.recovery in [SyscallRecoveryType.JUMPER, SyscallRecoveryType.JUMPER_RANDOMIZED]:
+                code += '\n\t\t"pop edi \\n"'
             code += '\n\t\t"ret \\n"'
 
             code += f'\n\t"do_sysenter_interrupt_{function_hash:08X}: \\n"'
             code += '\n\t\t"mov edx, esp \\n"'
+            if self.recovery in [SyscallRecoveryType.JUMPER, SyscallRecoveryType.JUMPER_RANDOMIZED]:
+                code += '\n\t\t"call _local_is_wow64 \\n"'
+                code += '\n\t\t"test eax, eax \\n"'
+                code += f'\n\t\t"je is_native_{function_hash:08X} \\n"'
+                code += '\n\t\t"add edx, 8 \\n"'
+
+            if self.recovery in [SyscallRecoveryType.JUMPER, SyscallRecoveryType.JUMPER_RANDOMIZED]:
+                code += f'\n\t"is_native_{function_hash:08X}: \\n"'
+                code += '\n\t\t"mov eax, ecx \\n"'
+                code += '\n\t\t"xor ecx, ecx \\n"'
 
             if self.debug:
                 code += '\n\t\t"int 3 \\n"'
